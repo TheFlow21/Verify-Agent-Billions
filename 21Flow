@@ -1,0 +1,62 @@
+name: Verify AI Agent Identity
+
+on:
+  workflow_dispatch:
+    inputs:
+      agent_name:
+        description: 'Nama Agent'
+        required: true
+        default: 'Flow21'
+      agent_description:
+        description: 'Deskripsi Agent'
+        required: true
+        default: 'Flow21 AI Agent'
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: './scripts/package-lock.json' # Memastikan cache bekerja di subfolder
+
+      - name: Step 1 - Install ClawHub skill
+        run: npx clawhub@latest install verified-agent-identity
+
+      - name: Install script dependencies
+        working-directory: ./scripts
+        run: |
+          if [ -f package.json ]; then
+            npm install
+          else
+            echo "Warning: package.json not found in scripts directory."
+          fi
+
+      - name: Step 2 - Create new Ethereum Identity
+        run: node scripts/createNewEthereumIdentity.js
+
+      - name: Step 3 - Link Human to Agent
+        env:
+          AGENT_NAME: ${{ github.event.inputs.agent_name }}
+          AGENT_DESC: ${{ github.event.inputs.agent_description }}
+        run: |
+          # Menggunakan variabel lingkungan (env) untuk menghindari masalah escaping shell yang kompleks
+          CHALLENGE_JSON=$(jq -n --arg name "$AGENT_NAME" --arg desc "$AGENT_DESC" '{name: $name, description: $desc}')
+          node scripts/manualLinkHumanToAgent.js --challenge "$CHALLENGE_JSON"
+
+      - name: Upload Identity Artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ethereum-identity
+          path: |
+            scripts/identity.json
+            scripts/wallet.json
+          retention-days: 5
